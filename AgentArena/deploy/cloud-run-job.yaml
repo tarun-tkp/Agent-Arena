@@ -1,0 +1,73 @@
+# Cloud Run Job manifest (alternative to cloudbuild.yaml deploy step)
+#
+# 1. Create Artifact Registry repo:
+#    gcloud artifacts repositories create agent-arena \
+#      --repository-format=docker --location=asia-southeast1
+#
+# 2. Build & push:
+#    docker build -t asia-southeast1-docker.pkg.dev/PROJECT/agent-arena/amadeus:latest .
+#    docker push asia-southeast1-docker.pkg.dev/PROJECT/agent-arena/amadeus:latest
+#
+# 3. Create secrets (see cloudbuild.yaml comments)
+#
+# 4. Deploy job:
+#    gcloud run jobs replace deploy/cloud-run-job.yaml --region=asia-southeast1
+#
+# 5. Execute:
+#    gcloud run jobs execute agent-arena-amadeus --region=asia-southeast1
+#
+# 6. Scale — run multiple executions in parallel (separate run IDs):
+#    for i in 1 2 3; do gcloud run jobs execute agent-arena-amadeus --region=asia-southeast1 & done
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: agent-arena-amadeus
+  labels:
+    app: agent-arena
+spec:
+  template:
+    spec:
+      taskCount: 1
+      parallelism: 1
+      template:
+        spec:
+          timeoutSeconds: 3600
+          maxRetries: 0
+          serviceAccountName: agent-arena-runner@PROJECT_ID.iam.gserviceaccount.com
+          containers:
+            - image: asia-southeast1-docker.pkg.dev/PROJECT_ID/agent-arena/amadeus:latest
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+              env:
+                - name: AGENT_NAME
+                  value: AgentArena-Amadeus-v1
+                - name: AGENT_STACK
+                  value: Python / ADK / Gemini / Traceloop
+                - name: MODEL
+                  value: gemini-2.0-flash
+                - name: MAX_TASKS
+                  value: "20"
+                - name: TEMPERATURE
+                  value: "0.1"
+                - name: EVAL_OUTPUT_DIR
+                  value: /app/runs
+                - name: MCP_ENDPOINT
+                  value: https://agent-arena-623774504237.asia-southeast1.run.app/mcp
+                - name: GEMINI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: gemini-api-key
+                      key: latest
+                - name: ARENA_ID_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: arena-id-token
+                      key: latest
+                - name: TRACELOOP_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: traceloop-api-key
+                      key: latest

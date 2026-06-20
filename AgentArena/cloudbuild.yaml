@@ -1,0 +1,58 @@
+# Build and deploy Agent Arena bot to Cloud Run Job
+#
+# Prerequisites:
+#   gcloud auth login
+#   gcloud config set project YOUR_PROJECT_ID
+#
+# One-time secrets (replace values):
+#   echo -n "your-gemini-key" | gcloud secrets create gemini-api-key --data-file=-
+#   echo -n "your-firebase-jwt" | gcloud secrets create arena-id-token --data-file=-
+#   echo -n "your-traceloop-key" | gcloud secrets create traceloop-api-key --data-file=-
+#
+# Deploy:
+#   gcloud builds submit --config cloudbuild.yaml
+
+substitutions:
+  _REGION: asia-southeast1
+  _SERVICE: agent-arena-amadeus
+  _IMAGE: agent-arena-amadeus
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/agent-arena/${_IMAGE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/agent-arena/${_IMAGE}:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/agent-arena/${_IMAGE}
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/agent-arena/${_IMAGE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --memory=2Gi
+      - --cpu=2
+      - --max-retries=0
+      - --task-timeout=3600
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,ARENA_ID_TOKEN=arena-id-token:latest,TRACELOOP_API_KEY=traceloop-api-key:latest
+      - --set-env-vars=AGENT_NAME=AgentArena-Amadeus-v1,MAX_TASKS=20,EVAL_OUTPUT_DIR=/app/runs
+      - --service-account=agent-arena-runner@$PROJECT_ID.iam.gserviceaccount.com
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/agent-arena/${_IMAGE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/agent-arena/${_IMAGE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
